@@ -50,7 +50,7 @@ group_tb = "officers"           #the table containing any jobs...
 group_tb_name = "Office"        #field to search through for job
 group_tb_email = "eMail"        #field in table for email NOTE: may actually be a memberID or something (CHANGE ME... later)
 
-loggingDir = "/home/bevs/bin/"
+loggingDir = "/home/brian/logs/mailite/"
 logFileName = loggingDir + "mailite.log"
 wildcard = "%"                  #the character or string used as a wildcard by your database 
 
@@ -126,8 +126,8 @@ except Exception, e:
 
 logging.debug("changing the recipient address based on db lookup")
 try:
-    email_data['To'] = lookupUser(email_data['To'])
-    assert email_data["To"] = "hardbyte+redirected@gmail.com"
+    email_data.replace_header('To',lookupUser(email_data['To']))
+    assert email_data["To"] == "hardbyte+redirected@gmail.com"
 except Exception, e:
     logging.error("Couldn't set new address. %s",e)
     raise SystemExit    
@@ -172,5 +172,4 @@ try:
 except Exception, e:
     logging.error('error occured in mysql query. \nQuery:%s\nError: %s', (query,e))
     raise SystemExit
-it
 
