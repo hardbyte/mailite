@@ -37,7 +37,7 @@ database_user = ""    # user needs at least read access.
 database_passwd = ""
 
 name_tb = "members"             #the table in the database that contains names
-name_tb_name = "name"           #the field in name_table that contains all the names 
+name_tb_name = "Name"           #the field in name_table that contains all the names 
 name_tb_id = "mid"              #if the member is refered to by a number enter the field found on the name table here
 name_tb_filter = ""             #add a mysql where() clause if not all names in the table will be connected to emails.
 
@@ -50,7 +50,7 @@ group_tb = "officers"           #the table containing any jobs...
 group_tb_name = "Office"        #field to search through for job
 group_tb_email = "eMail"        #field in table for email NOTE: may actually be a memberID or something (CHANGE ME... later)
 
-loggingDir = "/home/brian/logs/mailite/"
+loggingDir = "/home/bevs/bin/"
 logFileName = loggingDir + "mailite.log"
 wildcard = "%"                  #the character or string used as a wildcard by your database 
 
@@ -59,15 +59,52 @@ wildcard = "%"                  #the character or string used as a wildcard by y
 ###############################################################################
 import sys,logging,time
 logging.basicConfig(level=logging.DEBUG, format='%(asctime)s %(filename)s %(levelname)s %(message)s',filename=logFileName)
+logging.info("Starting mailite script")
 
+class NameNotFound(Exception):
+    pass
+class JobNotFound(Exception):
+    pass
+class EmailMalformed(Exception):
+    pass
+
+def mqs(query):
+    """Query the database and select an item."""
+    try:
+        cursor.execute(query)
+        row = cursor.fetchone()
+        logging.debug("Mysql query: '%s'" % query)
+        return row[0]
+    except Exception, e:
+        logging.error('error occured in mysql query. \nQuery:%s \n Error: %s', (query,e))
+        raise SystemExit
 
 def lookupUser(email):
     """
     We must split up the email address and try determine if its addressed 
     to a name in our tables... ie Brian.Thorne@blah.com looks for a brian thorne
-    Also may see if its in a job table eg president@blah.com looks up job president
+    Also may see if its in a job table eg president@blah.com looks up president in the jobs table
     """
-    return "hardbyte+redirected@gmail.com"
+    logging.debug("looking up email: %s" % email)
+    try:
+        section = email.split('@')[0]
+        logging.debug("first section of email: %s" % section)
+    except Exception, e:
+        logging.error("failed to split email.")
+        raise EmailMalformed
+    try:
+        newEmail = emailFromName(section)
+        assert newEmail is not None
+    except Exception, e:
+        logging.debug("email was not a name")
+        raise NameNotFound
+    except NameNotFound:
+        try:
+            newEmail = emailFromJob(section)
+        except Exception, e:
+            logging.debug("email was not a job")
+            raise JobNotFound
+    return newEmail
 
 def strReplace(s,old,new):
     """
@@ -78,7 +115,7 @@ def strReplace(s,old,new):
     if len(new) != len(old):
         new = len(old)*new
     tranTable = string.maketrans(old,new)
-    s2 = translate(tranTable)
+    s2 = string.translate(s, tranTable)
     return s2
 
 def emailFromName(name):
@@ -87,89 +124,103 @@ def emailFromName(name):
     return None if no match found
     """
     searchStr = wildcard + strReplace(name,"*.-_+1234567890",wildcard) + wildcard
-    return mqs("SELECT '" + email_tb_email + "' FROM '" + name_tb + "' WHERE '" + name_tb_name + "' LIKE '" + searchStr + "' LIMIT 1")
+    query = "SELECT " + email_tb_email + " FROM " + name_tb + " WHERE " + name_tb_name + ' LIKE "' + searchStr + '" LIMIT 1'
+    return mqs(query)
     
 def emailFromJob(job):
     """Given a job title find the email addy in a db or return None"""
-    job = strReplace(job,"*.-_+1234567890",wildcard)
-    query = "SELECT '" + group_tb_email + "' FROM '" + group_tb + "' WHERE LOWER('" + group_tb_name + "')='" + job + "' LIMIT 1"
+    job = wildcard + strReplace(job,"*.-_+1234567890",wildcard) + wildcard
+    
+    query = "SELECT " + group_tb_email + " FROM " + group_tb + " WHERE LOWER(" + group_tb_name + ") LIKE " + job.lower() + " LIMIT 1"
     return mqs(query)
 
+def connectToDB():
+    logging.debug("importing MySQLdb")
+    try:
+        import MySQLdb
+    except Exception, e:
+        logging.error("Failed to import MySQLdb, error was: %s" %e)
+        import os
+        logging.debug("ENV data: %s" % "\n".join(os.environ.data))
+        raise SystemExit
 
-logging.debug("first have to save the email that is being piped in...")
-try:
-    raw_email = sys.stdin.read() #read the email from stdin
-except Exception, e:
-    logging.error("Couldn't get email from std in... %s",e)
-    raise SystemExit
+    logging.debug("Connecting to the database")
+    try:
+        conn = MySQLdb.connect(host = database_host,
+            user = database_user,
+            passwd = database_passwd,
+            db = database_name)
+        cursor = conn.cursor()
+    except MySQLdb.Error, e:
+        logging.error( "Error %d: %s" % (e.args[0], e.args[1]))
+        raise SystemExit
+    return (conn, cursor)
 
-logging.debug("for now save the email in a text file...")
-try:
-    filename = loggingDir + 'emailScriptTestEmail'+time.ctime().replace(" ", "-")+'.txt'
-    tmpfile = file(filename,'w')
-    tmpfile.write(raw_email)
-    logging.debug("email save as: %s" % filename)    
-    tmpfile.close()
-except Exception, e:
-    logging.error("Couldn't save email to temp file... %s",e)
-    raise SystemExit
+def saveEmailToFile():
+    logging.debug("first save the email that is being piped in...")
+    try:
+        raw_email = sys.stdin.read() #read the email from stdin
+    except Exception, e:
+        logging.error("Couldn't get email from std in... %s",e)
+        raise SystemExit
 
-logging.debug("open the saved email")
-try:
-    import email
-    email_file = file(filename,'r')
-    email_data = email.message_from_file(email_file)
-    email_file.close()
-except Exception, e:
-    logging.error("either couldn't open email from temp file or parse file into email... %s",e)
-    raise SystemExit
+    logging.debug("save the email in a text file...")
+    try:
+        filename = loggingDir + 'emailScriptTestEmail'+time.ctime().replace(" ", "-")+'.txt'
+        tmpfile = file(filename,'w')
+        tmpfile.write(raw_email)
+        logging.debug("email save as: %s" % filename)    
+        tmpfile.close()
+    except Exception, e:
+        logging.error("Couldn't save email to temp file... %s",e)
+        raise SystemExit
+    return filename
 
-logging.debug("changing the recipient address based on db lookup")
-try:
-    email_data.replace_header('To',lookupUser(email_data['To']))
-    assert email_data["To"] == "hardbyte+redirected@gmail.com"
-except Exception, e:
-    logging.error("Couldn't set new address. %s",e)
-    raise SystemExit    
+def openEmailFromFile(filename):
+    logging.debug("open the saved email")
+    try:
+        import email
+        email_file = file(filename,'r')
+        email_data = email.message_from_file(email_file)
+        email_file.close()
+    except Exception, e:
+        logging.error("either couldn't open email from temp file or parse file into email... %s",e)
+        raise SystemExit
+    return email_data
 
-logging.debug("about to send the email onwards...")
-try:
-    import smtplib
-    smtp_conn = smtplib.SMTP()
-    smtp_conn.connect()
-    smtp_conn.sendmail(email_data['From'], email_data['To'], email_data.as_string())
-    logging.debug("email was sent... from: %s to: %s" % (email_data['From'],email_data['To']))
-    smtp_conn.close()
-except Exception, e:
-    logging.error("Couldn't send email: %s",e)
-    raise SystemExit    
+def redirectEmail(email_data):    
+    logging.debug("changing the recipient address based on db lookup")
+    try:
+        email_data.replace_header('To',lookupUser(email_data['To']))
+    except Exception, e:
+        logging.error("Couldn't set new address. %s",e)
+        raise SystemExit    
+    return email_data
+    
+def sendEmail(email_data):
+    logging.debug("about to send the email onwards...")
+    try:
+        import smtplib
+        smtp_conn = smtplib.SMTP()
+        smtp_conn.connect()
+        smtp_conn.sendmail(email_data['From'], email_data['To'], email_data.as_string())
+        logging.debug("email was sent... from: %s to: %s" % (email_data['From'],email_data['To']))
+        smtp_conn.close()
+    except Exception, e:
+        logging.error("Couldn't send email: %s",e)
+        raise SystemExit    
 
-logging.debug("importing MySQLdb")
-try:
-    import MySQLdb
-except Exception, e:
-    logging.error("Failed to import MySQLdb, error was: %s" %e)
-    raise SystemExit
-
-logging.debug("Connecting to the database")
-try:
-    conn = MySQLdb.connect(host = database_host,
-        user = database_user,
-        passwd = database_passwd,
-        db = database_name)
-    cursor = conn.cursor()
-except Exception, e:
-    logging.error("Could not connect to database. Error was: %s" % e)
-
-
-try:
-    query = "SELECT VERSION()"
-    cursor.execute(query)    #test query for now...
-    row = cursor.fetchone()
-    logging.info( "Test mysql from python.  Server Version: %s" % row[0])
+def closeConnection(conn,cursor):
+    logging.debug("Closing Connection")        
     cursor.close()
+    conn.commit()
     conn.close()
-except Exception, e:
-    logging.error('error occured in mysql query. \nQuery:%s\nError: %s', (query,e))
-    raise SystemExit
+    
+
+conn, cursor = connectToDB()
+filename = saveEmailToFile()
+email_data = openEmailFromFile(filename)
+new_email_data = redirectEmail(email_data)
+sendEmail(new_email_data)
+closeConnection(conn,cursor)
 
