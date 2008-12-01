@@ -70,13 +70,13 @@ class EmailMalformed(Exception):
 
 def mqs(query):
     """Query the database and select an item."""
+    logging.debug("Mysql query: '%s'" % query)
     try:
         cursor.execute(query)
         row = cursor.fetchone()
-        logging.debug("Mysql query: '%s'" % query)
         return row[0]
     except Exception, e:
-        logging.error('error occured in mysql query. \nQuery:%s \n Error: %s', (query,e))
+        logging.error('error occured in mysql query. \nQuery:%s \n Error: %s' % (query,e))
         raise SystemExit
 
 def lookupUser(email):
@@ -95,15 +95,19 @@ def lookupUser(email):
     try:
         newEmail = emailFromName(section)
         assert newEmail is not None
-    except Exception, e:
+    except:
         logging.debug("email was not a name")
-        raise NameNotFound
-    except NameNotFound:
         try:
             newEmail = emailFromJob(section)
-        except Exception, e:
-            logging.debug("email was not a job")
-            raise JobNotFound
+            assert newEmail is not None
+        except:
+            logging.debug("email was not a job either")
+            print """
+            Hello,
+            We are sorry, but the email address (%s) was not found.
+            %s
+            """ % (section, email.split('@')[1])
+            raise SystemExit
     return newEmail
 
 def strReplace(s,old,new):
@@ -131,7 +135,7 @@ def emailFromJob(job):
     """Given a job title find the email addy in a db or return None"""
     job = wildcard + strReplace(job,"*.-_+1234567890",wildcard) + wildcard
     
-    query = "SELECT " + group_tb_email + " FROM " + group_tb + " WHERE LOWER(" + group_tb_name + ") LIKE " + job.lower() + " LIMIT 1"
+    query = "SELECT " + group_tb_email + " FROM " + group_tb + " WHERE LOWER(" + group_tb_name + ') LIKE "' + job.lower() + '" LIMIT 1'
     return mqs(query)
 
 def connectToDB():
@@ -161,7 +165,7 @@ def saveEmailToFile():
     try:
         raw_email = sys.stdin.read() #read the email from stdin
     except Exception, e:
-        logging.error("Couldn't get email from std in... %s",e)
+        logging.error("Couldn't get email from std in...")
         raise SystemExit
 
     logging.debug("save the email in a text file...")
@@ -172,7 +176,7 @@ def saveEmailToFile():
         logging.debug("email save as: %s" % filename)    
         tmpfile.close()
     except Exception, e:
-        logging.error("Couldn't save email to temp file... %s",e)
+        logging.error("Couldn't save email to temp file...")
         raise SystemExit
     return filename
 
@@ -184,7 +188,7 @@ def openEmailFromFile(filename):
         email_data = email.message_from_file(email_file)
         email_file.close()
     except Exception, e:
-        logging.error("either couldn't open email from temp file or parse file into email... %s",e)
+        logging.error("either couldn't open email from temp file or parse file into email...")
         raise SystemExit
     return email_data
 
@@ -192,9 +196,9 @@ def redirectEmail(email_data):
     logging.debug("changing the recipient address based on db lookup")
     try:
         email_data.replace_header('To',lookupUser(email_data['To']))
-    except Exception, e:
-        logging.error("Couldn't set new address. %s",e)
-        raise SystemExit    
+    except:
+        logging.error("Couldn't set new address.")
+        raise SystemExit
     return email_data
     
 def sendEmail(email_data):
@@ -207,7 +211,7 @@ def sendEmail(email_data):
         logging.debug("email was sent... from: %s to: %s" % (email_data['From'],email_data['To']))
         smtp_conn.close()
     except Exception, e:
-        logging.error("Couldn't send email: %s",e)
+        logging.error("Couldn't send email")
         raise SystemExit    
 
 def closeConnection(conn,cursor):
@@ -223,4 +227,16 @@ email_data = openEmailFromFile(filename)
 new_email_data = redirectEmail(email_data)
 sendEmail(new_email_data)
 closeConnection(conn,cursor)
+
+
+#Misc bits for testing
+#version = mqs("SELECT VERSION()")
+#logging.info("MySql Version is: %s" % version)
+
+#cursor.execute ("SELECT name, eMail FROM members")
+#rows = cursor.fetchall()
+#for row in rows:
+#    logging.debug("%s, %s" % row)
+#logging.debug("Number of rows returned: %d" % cursor.rowcount)
+
 
