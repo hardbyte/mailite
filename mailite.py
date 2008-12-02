@@ -23,6 +23,7 @@ Brian Thorne 2008
 TODO:
 * test alot
 * clean up - OO it
+* add filtering
 * add groups - simple mailing lists
 * make a mqs function - connect to db and select a single item and return it...
 """
