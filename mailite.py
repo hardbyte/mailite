@@ -75,7 +75,8 @@ def mqs(query):
     try:
         cursor.execute(query)
         row = cursor.fetchone()
-        return row[0]
+        if row is not None: return row[0]
+        return row
     except Exception, e:
         logging.error('error occured in mysql query. \nQuery:%s \n Error: %s' % (query,e))
         raise SystemExit
@@ -230,7 +231,6 @@ sendEmail(new_email_data)
 closeConnection(conn,cursor)
 
 
-#Misc bits for testing
 #version = mqs("SELECT VERSION()")
 #logging.info("MySql Version is: %s" % version)
 
@@ -239,5 +239,3 @@ closeConnection(conn,cursor)
 #for row in rows:
 #    logging.debug("%s, %s" % row)
 #logging.debug("Number of rows returned: %d" % cursor.rowcount)
-
-
