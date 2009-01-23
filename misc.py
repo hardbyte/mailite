@@ -16,3 +16,6 @@ def test():
     mailJob = ('bevs-hire.com','hardbyte@gmail.com','webmaster@uccc.org.nz',"Test to Job","This is a test email from python\n--Brian")
     mail(*mailUser)
     mail(*mailJob)
+    
+if __name__ == "__main__":
+    test()

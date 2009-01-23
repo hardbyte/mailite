@@ -58,7 +58,7 @@ if redirect_groups:
     groupmap_tb_group_index = "gid"
     groupmap_tb_member_index = "mid"
 
-loggingDir = "./"
+loggingDir = "/home/bevs/bin/"
 logFileName = loggingDir + "mailite.log"
 
 save_emails_on_server = False
@@ -68,7 +68,11 @@ wildcard = "%"                  #the character or string used as a wildcard by y
 # Settings end here - Do NOT Modify below unless you know what you are doing!
 ###############################################################################
 import sys,logging,time
-logging.basicConfig(level=logging.DEBUG, format='%(asctime)s %(filename)s %(levelname)s %(message)s',filename=logFileName)
+try:
+    logging.basicConfig(level=logging.DEBUG, format='%(asctime)s %(filename)s %(levelname)s %(message)s',filename=logFileName)
+except:
+    logging.basicConfig(level=logging.DEBUG, format='%(asctime)s %(filename)s %(levelname)s %(message)s',filename=None)
+
 logging.info("Starting mailite script")
 
 
@@ -85,6 +89,7 @@ def mqs(query):
     try:
         cursor.execute(query)
         row = cursor.fetchone()
+        logging.debug("Row fetched was: %s" % row)
         if len(row) > 1:
             return row[0]
         else:
@@ -147,6 +152,7 @@ def strReplace(s,old,new):
     Utility string function that python really should have!
     For a given string s, replace any instances found of chars in the string old with new
     """
+    logging.debug("strReplace Called with '%s','%s','%s'." % (s,old,new))
     import string
     if len(new) != len(old):
         new = len(old)*new
@@ -277,8 +283,10 @@ def sendEmail(email_data):
         smtp_conn = smtplib.SMTP()
         smtp_conn.connect()
         logging.debug("smtp connection setup")
-        #logging.debug("email from: %s, to: %s, msg: '%s'" % (email_data["From"],email_data['To'],email_data.as_string()))
-        smtp_conn.sendmail(email_data['From'], email_data['To'], email_data.as_string())
+        msgFrom = email_data['From']
+        msgTo = email_data['To'][0] #todo only do this if a tuple...
+        logging.debug("email from: %s, to: %s" % (msgFrom,msgTo ))
+        smtp_conn.sendmail(msgFrom, msgTo, email_data.as_string())
         #logging.debug("email was sent... from: %s to: %s" % (email_data['From'],email_data['To']))
         smtp_conn.close()
     except Exception, e:
@@ -305,4 +313,5 @@ else:
 
 new_email_data = redirectEmail(email_data)
 sendEmail(new_email_data)
-closeConnection(conn,cursor)
+closeConnection(conn, cursor)
+
