@@ -28,50 +28,18 @@ TODO:
 * make a mqs function - connect to db and select a single item and return it...
 """
 from config import *
-name_tb = "members"             #the table in the database that contains names
-name_tb_name = "Name"           #the field in name_table that contains all the names 
-name_tb_id = "mid"              #if the member is refered to by a number enter the field found on the name table here
-name_tb_filter = ""             #add a mysql where() clause if not all names in the table will be connected to emails.
+import sys,logging,time
 
-email_tb = name_tb              #if the emails are stored in a differant table change this field
-email_table_id = name_tb_id     #the field to link emails to names (used if data is across tables)
-email_table_filter = ""
-email_tb_email = "eMail"        #the field name for email addresses in the email_table
-
-redirect_jobs = True
-if redirect_jobs:
-    job_tb = "officers"           #the table containing any jobs...
-    job_tb_name = "Office"        #field to search through for job
-    job_tb_email = "eMail"        #field in table for email NOTE: may actually be a memberID or something (CHANGE ME... later)
-
-redirect_groups = True
-if redirect_groups:    
-    #Group redirects are for messaging lists of people
-    #Currently set up for a table of mapping each user to each group.
-    group_redirects = True
-    groups_tb = "groups"
-    groups_tb_index = "gid"         #Group ID, set to None if map is done on title alone.
-    groups_tb_title = "name"        #field to search through for group title.
-
-    #Table that maps line by line user (by ID) to group (by ID)
-    groupmap_tb = "group_map"
-    groupmap_tb_group_index = "gid"
-    groupmap_tb_member_index = "mid"
-
-loggingDir = "/home/bevs/bin/"
-logFileName = loggingDir + "mailite.log"
-
-save_emails_on_server = False
-wildcard = "%"                  #the character or string used as a wildcard by your database 
+verbosity = logging.INFO
 
 ###############################################################################
 # Settings end here - Do NOT Modify below unless you know what you are doing!
 ###############################################################################
-import sys,logging,time
+
 try:
-    logging.basicConfig(level=logging.DEBUG, format='%(asctime)s %(filename)s %(levelname)s %(message)s',filename=logFileName)
+    logging.basicConfig(level=verbosity, format='%(asctime)s %(filename)s %(levelname)s %(message)s',filename=logFileName)
 except:
-    logging.basicConfig(level=logging.DEBUG, format='%(asctime)s %(filename)s %(levelname)s %(message)s',filename=None)
+    logging.basicConfig(level=verbosity, format='%(asctime)s %(filename)s %(levelname)s %(message)s',filename=None)
 
 logging.info("Starting mailite script")
 
@@ -260,11 +228,13 @@ def openEmailFromFile(filename):
 def redirectEmail(email_data):    
     logging.debug("changing the recipient address based on db lookup")
     try:
-        emailAddys = lookupUser(email_data['To'])
+        emailAddys = lookupUser(email_data['To'])	#  This returns a tuple, probably just like: ('theaddy@thing.com',)
         if len(emailAddys) > 1:
+            logging.debug("more than one recipient...")
             emailAddys = ",".join(emailAddys)
-        
-        logging.debug("Addresses replaced with: %s" % emailAddys)    
+        else:
+            emailAddys = emailAddys[0]
+        logging.debug("To field was: [%s] replaced with [%s]" % (email_data['To'],emailAddys))    
         email_data.replace_header('To',emailAddys)
     except:
         logging.error("Couldn't set new address.")
@@ -284,14 +254,21 @@ def sendEmail(email_data):
         smtp_conn.connect()
         logging.debug("smtp connection setup")
         msgFrom = email_data['From']
-        msgTo = email_data['To'][0] #todo only do this if a tuple...
-        logging.debug("email from: %s, to: %s" % (msgFrom,msgTo ))
-        smtp_conn.sendmail(msgFrom, msgTo, email_data.as_string())
+        msgTo = email_data['To']
+        if not isinstance(msgTo, basestring):
+            logging.debug('email was to multiple recipients? value: %s Type of msgTo: %s' % (msgTo,type(msgTo)))
+            msgTo = msgTo[0] # only do this if multiple recipients ie a tuple...
+        logging.debug("Types from: [%s] to: [%s]" % (type(msgFrom),type(msgTo) ))
+        logging.debug("email from: [%s] to: [%s]" % (msgFrom,msgTo ))
+        logging.debug("The email data is of type: %s" % (type(email_data)))
+        emailData = email_data.as_string()
+        
+        smtp_conn.sendmail(msgFrom, msgTo, emailData)
         #logging.debug("email was sent... from: %s to: %s" % (email_data['From'],email_data['To']))
         smtp_conn.close()
     except Exception, e:
         logging.error("Couldn't send email")
-        logging.error("error: %s" % e)
+        logging.exception("error: %s" % e)
         raise SystemExit    
 
 
@@ -312,6 +289,7 @@ else:
     email_data = openEmailFromString(emailString)
 
 new_email_data = redirectEmail(email_data)
+logging.debug('email redirected')
 sendEmail(new_email_data)
+logging.info('Email sent')
 closeConnection(conn, cursor)
-
