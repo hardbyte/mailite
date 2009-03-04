@@ -1,6 +1,6 @@
 database_host = "localhost"
 database_name = ""
-database_user = ""              # user needs at least read access.
+database_user = ""    # user needs at least read access.
 database_passwd = ""
 
 name_tb = "members"             #the table in the database that contains names
@@ -37,3 +37,4 @@ loggingDir = "/home/bevs/bin/"
 logFileName = loggingDir + "mailite.log"
 
 save_emails_on_server = False
+wildcard = "%"                  #the character or string used as a wildcard by your database 
