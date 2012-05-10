@@ -3,29 +3,32 @@
 Mailite - to re-send emails to users in a database.
 
 Typical usage:
-someone emails some_name@yourclub.com 
-This program reads the "to" address of the incoming email and searches through
-your sites members for anyone matching "some name", then looks up the email address of that user.
-It resends the email, from the original sender to the actual email address looked up.
-If the user wasn't found it optionally looks through a jobs database then at groups. If still
-not found the mail is returned to sender with a user not found error.
+=============
+
+When someone emails some_name@yourcompanysite.com this program reads the
+"to" address of the incoming email and searches through your site's members
+for anyone matching "some name", then looks up the email address of that
+user.
+
+It resends the email, from the original sender to the actual email address
+looked up. If the user wasn't found it optionally looks through a jobs
+database then at groups. If still not found the mail is returned to sender
+with a user not found error.
 
 How to use this program:
-* make sure your webserver supports python.
-* if your webserver doesn't have the python module MySQLdb you will have to install it.
-* change the database settings below - specifing how to find the names and how to link them to an email address
-* put this file on your webserver where people can't get to it eg: /home/username/bin/mailite.py
-* redirect all unrouted emails to be piped to this script. see cpanel Default Addresses for help
-
+    * make sure your webserver supports python.
+    * change the database settings in config.py - specifing how to find the names and how to link them to an email address
+    * put both files on your webserver where people can't get to it eg: /home/username/bin/mailite.py
+    * redirect all unrouted emails to be piped to this script. See cpanel Default Addresses for help
 
 Brian Thorne 2008
 
 TODO:
-* test alot
-* clean up - OO it
-* add filtering
-* add groups - simple mailing lists
-* make a mqs function - connect to db and select a single item and return it...
+    * test a lot
+    * clean up - OO it
+    * add filtering
+    * add groups - simple mailing lists
+
 """
 from config import *
 import sys,logging,time
@@ -37,12 +40,15 @@ verbosity = logging.INFO
 ###############################################################################
 
 try:
-    logging.basicConfig(level=verbosity, format='%(asctime)s %(filename)s %(levelname)s %(message)s',filename=logFileName)
+    logging.basicConfig(level=verbosity, 
+                        format='%(asctime)s %(filename)s %(levelname)s %(message)s',
+                        filename=logFileName)
 except:
-    logging.basicConfig(level=verbosity, format='%(asctime)s %(filename)s %(levelname)s %(message)s',filename=None)
+    logging.basicConfig(level=logging.ERROR, 
+                        format='%(asctime)s %(filename)s %(levelname)s %(message)s',
+                        filename=None)
 
 logging.info("Starting mailite script")
-
 
 class NameNotFound(Exception):
     pass
@@ -79,8 +85,9 @@ def splitEmail(email):
 def lookupUser(email):
     """
     We must split up the email address and try determine if its addressed 
-    to a name in our tables... ie Brian.Thorne@blah.com looks for a brian thorne
-    Also may see if its in a job table eg president@blah.com looks up president in the jobs table
+    to a name in our tables... ie Joe.Blogs@blah.com looks for a "joe blogs"
+    If that failed see if its in a job table e.g. president@blah.com looks up 
+    "president" in the jobs table.
     """
     logging.debug("looking up email: %s" % email)
     try:
@@ -149,26 +156,26 @@ def emailFromGroup(group):
     return ["hardbyte+1@gmail.com","hardbyte+2@gmail.com"]
 
 def connectToDB():
-    logging.debug("importing MySQLdb")
+    logging.debug("importing mysql")
     try:
-        import MySQLdb
+        import mysql.connector
     except Exception, e:
-        logging.error("Failed to import MySQLdb, error was: %s" %e)
+        logging.error("Failed to import mysql, error was: %s" %e)
         import os
         logging.debug("ENV data: %s" % "\n".join(os.environ.data))
         raise SystemExit
 
     logging.debug("Connecting to the database")
     try:
-        conn = MySQLdb.connect(host = database_host,
-            user = database_user,
-            passwd = database_passwd,
-            db = database_name)
-        cursor = conn.cursor()
-    except MySQLdb.Error, e:
+        db = mysql.connector.connect(host = database_host,
+                             user = database_user,
+                             passwd = database_passwd,
+                             db = database_name)
+        cursor = db.cursor()
+    except mysql.connector.errors.InterfaceError, e:
         logging.error( "Error %d: %s" % (e.args[0], e.args[1]))
         raise SystemExit
-    return (conn, cursor)
+    return (db, cursor)
 
 
 def openEmailFromString(email_string):
@@ -184,7 +191,7 @@ def openEmailFromString(email_string):
 def saveEmailToString():
     logging.debug("reading the email that is being piped in...")
     try:
-        raw_email = sys.stdin.read() #read the email from stdin
+        raw_email = sys.stdin.read() # read the email from stdin
         return raw_email
     except Exception, e:
         logging.error("Couldn't get email from std in...")
@@ -224,11 +231,18 @@ def openEmailFromFile(filename):
         raise SystemExit
     return email_data
 
+def getEmailFromToField(to_field):
+    if '<' in to_field:
+        return to_field.split('<')[1].strip('>')
+    return to_field
 
 def redirectEmail(email_data):    
     logging.debug("changing the recipient address based on db lookup")
     try:
-        emailAddys = lookupUser(email_data['To'])	#  This returns a tuple, probably just like: ('theaddy@thing.com',)
+        to_field = email_data['To']
+        logging.debug('To field of email was: %s' % to_field)
+        # This returns a tuple, probably just like: ('theaddy@thing.com',)
+        emailAddys = lookupUser(getEmailFromToField(to_field))
         if len(emailAddys) > 1:
             logging.debug("more than one recipient...")
             emailAddys = ",".join(emailAddys)
@@ -257,7 +271,7 @@ def sendEmail(email_data):
         msgTo = email_data['To']
         if not isinstance(msgTo, basestring):
             logging.debug('email was to multiple recipients? value: %s Type of msgTo: %s' % (msgTo,type(msgTo)))
-            msgTo = msgTo[0] # only do this if multiple recipients ie a tuple...
+            msgTo = msgTo[0] # only do this if multiple recipients i.e. a tuple...
         logging.debug("Types from: [%s] to: [%s]" % (type(msgFrom),type(msgTo) ))
         logging.debug("email from: [%s] to: [%s]" % (msgFrom,msgTo ))
         logging.debug("The email data is of type: %s" % (type(email_data)))
